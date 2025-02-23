@@ -4,6 +4,8 @@ import sys
 import base64
 import requests
 import time
+import socket
+import select
 from datetime import datetime
 from bs4 import BeautifulSoup as BS
 
@@ -16,6 +18,8 @@ from googleapiclient.errors import HttpError
 # If modifying these scopes, delete the file token.json.
 last_message_id = None
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+HOST = '0.0.0.0'
+PORT = 11711
 
 def set_last_message_id():
     # Get the last message ID from the PDFs folder
@@ -120,10 +124,30 @@ if __name__ == "__main__":
 
     if not os.path.exists("kindle-pdfs"):
         os.mkdir("kindle-pdfs")
-
     last_message_id = set_last_message_id()
-    while True:
-        now = datetime.now()
-        print(f"[*] Checking GMail inbox at {now.strftime('%Y-%m-%d %H:%M:%S')}...")
-        main(creds)
-        time.sleep(2)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind((HOST, PORT))
+        server_socket.listen(1)
+
+        print(f"[*] Listening for termination signal on {HOST}:{PORT}...")
+        last_execution = 0
+
+        while True:
+            readable, _, _ = select.select([server_socket], [], [], 1.0)
+            now = datetime.now()
+            if server_socket in readable:
+                conn, addr = server_socket.accept()
+                termination_message = f"[+] Received termination request from {addr[0]}, exiting..."
+                print(termination_message)
+
+                conn.sendall(termination_message.encode())
+                conn.close()
+                break
+
+            print(f"[*] Checking GMail inbox at {now.strftime('%Y-%m-%d %H:%M:%S')}...")
+            current_time = time.time()
+            if current_time - last_execution >= 1:
+                main(creds)
+                last_execution = current_time
