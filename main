@@ -7,6 +7,7 @@ import requests
 import time
 import socket
 import select
+import random
 from pwn import log
 from datetime import datetime
 from bs4 import BeautifulSoup as BS
@@ -22,6 +23,11 @@ last_message_id = None
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 HOST = '0.0.0.0'
 PORT = 11711
+USER_AGENTS = list()
+PREV_USER_AGENT = ""
+
+with open("user-agents.txt", "rt") as uain:
+    USER_AGENTS = [line.rstrip() for line in uain]
 
 def set_last_message_id():
     # Get the last message ID from the PDFs folder
@@ -49,7 +55,15 @@ def auth():
             flow = InstalledAppFlow.from_client_secrets_file(
                 "credentials.json", SCOPES
             )
-            creds = flow.run_local_server(port=0)
+            auth_url, _ = flow.authorization_url(prompt="consent")
+
+            print("Open this URL in your browser:")
+            print(auth_url)
+
+            code = input("Enter the authorization code: ")
+            flow.fetch_token(code=code)
+
+            creds = flow.credentials
             # Save the credentials for the next run
             with open("token.json", "w") as token:
                 token.write(creds.to_json())
@@ -58,7 +72,10 @@ def auth():
 def fetch_pdf(pdf_link, filename):
     # Download the PDF
     try:
-        response = requests.get(pdf_link, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
+        chosen_user_agent = ""
+        while chosen_user_agent == PREV_USER_AGENT:
+            chosen_user_agent = random.choice(USER_AGENTS)
+        response = requests.get(pdf_link, headers={'User-Agent': chosen_user_agent})
         with open(f"kindle-pdfs/{filename}.pdf", "wb") as pdf:
             pdf.write(response.content)
     except Exception as err:
@@ -147,7 +164,7 @@ if __name__ == "__main__":
                     conn.close()
                     break
 
-                log.info(f"Checking GMail inbox at {now.strftime('%Y-%m-%d %H:%M:%S')}...")
+                # log.info(f"Checking GMail inbox at {now.strftime('%Y-%m-%d %H:%M:%S')}...")
                 current_time = time.time()
                 if current_time - last_execution >= 1:
                     main(creds)
